@@ -1,0 +1,3 @@
+# Runtime deps plus test tooling (not needed in the Docker image)
+-r requirements.txt
+pytest==9.1.1

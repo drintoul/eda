@@ -1,0 +1,29 @@
+# Core app
+streamlit==1.53.1
+pandas==2.3.3
+numpy==2.4.1
+
+# EDA / visualization
+matplotlib==3.10.8
+
+# Excel support (NEW - required)
+openpyxl==3.1.5
+xlrd==2.0.1
+
+# Streamlit dependency chain (explicitly pinned for stability)
+altair==6.0.0
+pyarrow==23.0.0
+pydeck==0.9.1
+protobuf==6.33.4
+requests==2.32.5
+tornado==6.5.4
+watchdog==6.0.0
+tenacity==9.1.2
+cachetools==6.2.5
+click==8.3.1
+typing-extensions==4.15.0
+
+# Pandas stack
+python-dateutil==2.9.0.post0
+pytz==2025.2
+tzdata==2025.3

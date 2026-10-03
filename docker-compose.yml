@@ -1,0 +1,72 @@
+services:
+
+  eda-app:
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: eda-app:local
+    container_name: eda-app
+
+    networks:
+      - website-network
+
+    ports:
+      - "127.0.0.1:8501:8501"
+
+    mem_limit: 2g
+
+    restart: unless-stopped
+
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8501/_stcore/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional Cloudflare Tunnel — expose the app on the internet.
+  # Disabled by default; start it with: docker compose --profile tunnel up -d
+  # Requires CLOUDFLARE_TUNNEL_TOKEN in .env (Cloudflare Zero Trust dashboard).
+  # Point the tunnel's public hostname at http://eda-app:8501 in the dashboard.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    container_name: eda-cloudflared
+    profiles:
+      - tunnel
+
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+
+    networks:
+      - website-network
+
+    depends_on:
+      eda-app:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+
+  website-network:
+    external: true
