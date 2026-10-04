@@ -178,7 +178,7 @@ def test_schema_summary_download_button(demo_df):
     at = make_app(_csv(demo_df))
     at.run()
     assert len(at.exception) == 0
-    buttons = [e for e in at.download_button if "schema summary" in e.label.lower()]
+    buttons = [e for e in at.get("download_button") if "schema summary" in e.label.lower()]
     assert len(buttons) == 1
 
 
