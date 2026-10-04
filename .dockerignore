@@ -19,4 +19,6 @@ env/
 
 # Tests & docs not needed at runtime
 tests/
+docs/
 README.md
+LICENSE

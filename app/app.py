@@ -2,6 +2,7 @@ import csv
 import io
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 
 import numpy as np
@@ -157,8 +158,8 @@ def get_excel_sheet_names(file_bytes: bytes) -> List[str]:
 
 
 @st.cache_data(show_spinner=False)
-def load_excel_bytes(file_bytes: bytes, sheet_name: str) -> pd.DataFrame:
-    return pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet_name)
+def load_excel_bytes(file_bytes: bytes, sheet_name: str, header_row: int = 0) -> pd.DataFrame:
+    return pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet_name, header=header_row)
 
 
 def _safe_series_for_numeric(s: pd.Series) -> pd.Series:
@@ -357,7 +358,8 @@ def render_columns_tab(df_used: pd.DataFrame):
         )
 
         s_num = _safe_series_for_numeric(s)
-        is_numeric = pd.api.types.is_numeric_dtype(s_num)
+        is_datetime = _looks_datetime(s)
+        is_numeric = pd.api.types.is_numeric_dtype(s_num) and not is_datetime
 
         st.divider()
         if is_numeric:
@@ -379,6 +381,29 @@ def render_columns_tab(df_used: pd.DataFrame):
                 st.dataframe(vc.rename("count").to_frame(), width="stretch")
             else:
                 st.caption("Value counts hidden (too many unique values). Increase the threshold if needed.")
+        elif is_datetime:
+            s_dt = pd.to_datetime(s, errors="coerce").dropna()
+            st.markdown("### Datetime summary")
+            if s_dt.empty:
+                st.info("No parseable datetime values.")
+            else:
+                unparsed = int(s.notna().sum() - len(s_dt))
+                if unparsed:
+                    st.caption(f"{_format_int(unparsed)} value(s) could not be parsed as dates.")
+
+                span = s_dt.max() - s_dt.min()
+                st.write(
+                    f"- **min:** {s_dt.min()}  \n"
+                    f"- **max:** {s_dt.max()}  \n"
+                    f"- **range:** {span.days} days"
+                )
+
+                freq = "D" if span.days <= 90 else "W" if span.days <= 730 else "M" if span.days <= 3650 else "Y"
+                unit = {"D": "day", "W": "week", "M": "month", "Y": "year"}[freq]
+                counts = s_dt.dt.to_period(freq).value_counts().sort_index()
+                counts.index = counts.index.to_timestamp()
+                st.markdown(f"### Rows over time (by {unit})")
+                st.line_chart(counts)
         else:
             st.markdown("### Categorical / text summary")
             s_str = s.astype("string")
@@ -493,6 +518,15 @@ def main():
                 key="excel_sheet_name",
                 help="Choose which Excel worksheet to analyze.",
             )
+            st.number_input(
+                "Header row (0 = first row)",
+                min_value=0,
+                max_value=100,
+                value=0,
+                step=1,
+                key="excel_header_row",
+                help="Use this row as column names, skipping rows above it (e.g. title/banner rows).",
+            )
 
         st.divider()
         st.header("3) Parsing & performance")
@@ -540,7 +574,11 @@ def main():
             if not selected_sheet or selected_sheet not in available_sheets:
                 selected_sheet = available_sheets[0]
                 st.session_state["excel_sheet_name"] = selected_sheet
-            df = load_excel_bytes(st.session_state["file_bytes"], selected_sheet)
+            df = load_excel_bytes(
+                st.session_state["file_bytes"],
+                selected_sheet,
+                header_row=st.session_state.get("excel_header_row", 0),
+            )
             parse_warning = None
         except Exception as e:
             st.error(f"Failed to read Excel file: {e}")
@@ -651,6 +689,13 @@ def main():
             }
         ).sort_values(["missing_%", "n_unique"], ascending=[False, False])
         st.dataframe(summary, width="stretch")
+
+        st.download_button(
+            "Download schema summary (CSV)",
+            data=summary.to_csv(index=False).encode("utf-8"),
+            file_name=f"{Path(file_name).stem or 'data'}_schema_summary.csv",
+            mime="text/csv",
+        )
 
         if id_detection.reasons:
             st.subheader("Auto-detected ID-like columns (on analyzed sample)")

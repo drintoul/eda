@@ -4,10 +4,15 @@ An interactive exploratory data analysis (EDA) web app built with **Streamlit**.
 Upload a CSV or Excel file and get an instant profile of your data: schema,
 missingness, per-column statistics, distributions, comparisons, and correlations.
 
+![Exploratory Data Analyzer — Overview tab](docs/screenshot.png)
+
+*The Overview tab: row/column metrics, a data preview, and per-column schema
+& missingness — here analyzing a 249-row sports teams Excel workbook.*
+
 ## Features
 
 - **File upload** — CSV, XLSX, and XLS support. For Excel workbooks, pick the
-  worksheet to analyze.
+  worksheet to analyze and set the header row to skip title/banner rows.
 - **Parsing controls** — selectable encoding and delimiter ("auto" sniffs the
   delimiter and falls back to latin-1 for non-UTF-8 files), plus a
   "skip malformed rows" fallback for broken CSVs (retries with the Python
@@ -18,11 +23,14 @@ missingness, per-column statistics, distributions, comparisons, and correlations
   ratio for non-float dtypes, UUID-shaped values) auto-exclude identifier
   columns, with an override to force-include them back.
 - **Overview tab** — row/column metrics, 200-row preview, per-column dtype /
-  missing % / unique counts, and the auto-exclusion report.
+  missing % / unique counts (exportable as CSV), and the auto-exclusion
+  report.
 - **Columns tab** — drill into any column:
   - Numeric: percentile summary and a histogram with adjustable bins.
   - Categorical/text: string-length stats, top-K value counts table and bar
     chart, optional full value-counts dump (capped at 50k unique values).
+  - Datetime: min/max/range summary and a rows-over-time chart with automatic
+    granularity (day/week/month/year).
   - Compare against a second column: scatter plot + Pearson r (numeric ×
     numeric), box plot by category (numeric × categorical), or crosstab
     (categorical × categorical).
@@ -129,3 +137,7 @@ and the correlation-cache behavior.
   exotic date formats may be classified as text.
 - Streamlit's upload limit is raised to 500 MB; larger files need CLI
   overrides (`--server.maxUploadSize`).
+
+## License
+
+[MIT](LICENSE)

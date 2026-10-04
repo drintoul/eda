@@ -128,6 +128,60 @@ def test_empty_column_filter_does_not_kill_corr_tab(demo_df):
     assert any("correlation" in s.lower() for s in subheaders)
 
 
+def _xlsx_bytes(rows: list) -> bytes:
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_excel_header_row_skips_banner():
+    rows = [
+        ["ANNUAL REPORT", None, None],
+        ["name", "age", "city"],
+        ["ann", 5, "x"],
+        ["bob", 6, "y"],
+    ]
+    at = make_app(_xlsx_bytes(rows), name="report.xlsx")
+    at.run()
+    assert len(at.exception) == 0
+    cols = [s for s in at.selectbox if s.key == "selected_col_widget"][0].options
+    # default header row 0 -> banner row becomes the header
+    assert "ANNUAL REPORT" in cols
+    ni = [e for e in at.number_input if e.key == "excel_header_row"][0]
+    ni.set_value(1).run()
+    assert len(at.exception) == 0
+    cols = [s for s in at.selectbox if s.key == "selected_col_widget"][0].options
+    assert set(cols) == {"name", "age", "city"}
+
+
+def test_datetime_column_shows_datetime_summary():
+    rng = np.random.default_rng(7)
+    dates = pd.date_range("2024-01-01", periods=30, freq="D").strftime("%Y-%m-%d")
+    df = pd.DataFrame({
+        "event_date": rng.choice(dates, 200),
+        "v": rng.integers(0, 5, 200),
+    })
+    at = make_app(_csv(df), selected_col="event_date")
+    at.run()
+    assert len(at.exception) == 0
+    assert any("Datetime summary" in m.value for m in at.markdown)
+    assert any("Rows over time" in m.value for m in at.markdown)
+
+
+def test_schema_summary_download_button(demo_df):
+    at = make_app(_csv(demo_df))
+    at.run()
+    assert len(at.exception) == 0
+    buttons = [e for e in at.download_button if "schema summary" in e.label.lower()]
+    assert len(buttons) == 1
+
+
 def test_stale_corr_cache_does_not_crash():
     df = pd.DataFrame({
         "z": np.arange(60, dtype=float),
