@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import re
 from dataclasses import dataclass
@@ -162,6 +163,37 @@ def load_excel_bytes(file_bytes: bytes, sheet_name: str, header_row: int = 0) ->
     return pd.read_excel(io.BytesIO(file_bytes), sheet_name=sheet_name, header=header_row)
 
 
+def _dedupe_columns(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[Tuple[Any, str]]]:
+    """Rename duplicate column labels so df[col] always returns a Series.
+
+    Pandas no longer mangles duplicate names on read, so 'a, a' arrives as-is
+    and df['a'] returns a DataFrame, breaking Series-based analysis. Returns
+    (df, [(original, renamed), ...]); df is copied only when renames occur.
+    """
+    seen: Dict[Any, int] = {}
+    taken = set(df.columns)
+    renames: List[Tuple[Any, str]] = []
+    new_cols = list(df.columns)
+    for i, col in enumerate(df.columns):
+        n = seen.get(col, 0)
+        seen[col] = n + 1
+        if n == 0:
+            continue
+        cand = f"{col}.{n}"
+        while cand in taken:
+            n += 1
+            cand = f"{col}.{n}"
+        seen[col] = n + 1
+        taken.add(cand)
+        new_cols[i] = cand
+        renames.append((col, cand))
+    if not renames:
+        return df, renames
+    df = df.copy()
+    df.columns = new_cols
+    return df, renames
+
+
 def _safe_series_for_numeric(s: pd.Series) -> pd.Series:
     if pd.api.types.is_numeric_dtype(s):
         return s
@@ -262,9 +294,19 @@ def corr_heatmap(corr: pd.DataFrame, title: str = "Correlation heatmap"):
 # -----------------------------
 # Correlation caching (session-state)
 # -----------------------------
-def _corr_fingerprint(file_name: str, sample_rows: int, excluded_set: Tuple[str, ...], method: str, num_cols: List[str]) -> str:
+def _file_signature(file_bytes: bytes, sheet_name: Optional[str], header_row: Optional[int]) -> str:
+    """Bounded identity for the uploaded data: head+tail+length digest plus
+    the Excel sheet/header context, so same-name uploads and sheet switches
+    produce different signatures without hashing the full payload."""
+    head = file_bytes[:65_536]
+    tail = file_bytes[-65_536:] if len(file_bytes) > 65_536 else b""
+    digest = hashlib.sha256(head + tail + len(file_bytes).to_bytes(8, "little")).hexdigest()[:16]
+    return f"{digest}|sheet={sheet_name}|header={header_row}"
+
+
+def _corr_fingerprint(file_name: str, data_sig: str, sample_rows: int, excluded_set: Tuple[str, ...], method: str, num_cols: List[str]) -> str:
     # A simple, stable fingerprint. (Not hashing full data on purpose.)
-    return f"{file_name}|sample={sample_rows}|excluded={','.join(excluded_set)}|method={method}|num={','.join(num_cols)}"
+    return f"{file_name}|sig={data_sig}|sample={sample_rows}|excluded={','.join(excluded_set)}|method={method}|num={','.join(num_cols)}"
 
 
 def reset_ui_state(keep_file: bool = True):
@@ -593,6 +635,12 @@ def main():
         if parse_warning:
             st.warning(parse_warning)
 
+    df, dup_renames = _dedupe_columns(df)
+    if dup_renames:
+        shown = ", ".join(f"{orig!r} → {new!r}" for orig, new in dup_renames[:5])
+        more = f" (and {len(dup_renames) - 5} more)" if len(dup_renames) > 5 else ""
+        st.warning(f"Duplicate column names were renamed: {shown}{more}")
+
     # sample if huge
     df_for_analysis = df
     if len(df_for_analysis) > st.session_state["sample_rows"]:
@@ -724,6 +772,11 @@ def main():
         num_cols = list(num_df.columns)
         fp = _corr_fingerprint(
             file_name=st.session_state.get("file_name", "uploaded.csv"),
+            data_sig=_file_signature(
+                st.session_state["file_bytes"],
+                st.session_state.get("excel_sheet_name"),
+                st.session_state.get("excel_header_row"),
+            ),
             sample_rows=st.session_state["sample_rows"],
             excluded_set=excluded_sorted,
             method=method,

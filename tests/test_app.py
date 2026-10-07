@@ -3,6 +3,7 @@
 Run:  pip install -r requirements-dev.txt && pytest
 """
 import io
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,8 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 APP_PATH = Path(__file__).resolve().parents[1] / "app" / "app.py"
+sys.path.insert(0, str(APP_PATH.parent))
+import app as eda_app
 
 
 def _csv(df: pd.DataFrame) -> bytes:
@@ -180,6 +183,42 @@ def test_schema_summary_download_button(demo_df):
     assert len(at.exception) == 0
     buttons = [e for e in at.get("download_button") if "schema summary" in e.label.lower()]
     assert len(buttons) == 1
+
+
+def test_dedupe_columns_renames_duplicates():
+    # pandas currently mangles dup headers on read, but _dedupe_columns keeps
+    # df[col] returning a Series if that ever changes
+    df = pd.DataFrame(np.arange(6).reshape(2, 3), columns=["a", "b", "a"])
+    out, renames = eda_app._dedupe_columns(df)
+    assert list(out.columns) == ["a", "b", "a.1"]
+    assert renames == [("a", "a.1")]
+    assert list(df.columns) == ["a", "b", "a"]
+
+
+def test_dedupe_columns_avoids_existing_names_and_passthrough():
+    df = pd.DataFrame(np.arange(6).reshape(2, 3), columns=["a", "a.1", "a"])
+    out, _ = eda_app._dedupe_columns(df)
+    assert list(out.columns) == ["a", "a.1", "a.2"]
+
+    clean = pd.DataFrame({"a": [1], "b": [2]})
+    same, renames = eda_app._dedupe_columns(clean)
+    assert same is clean
+    assert renames == []
+
+
+def test_corr_fingerprint_changes_with_file_content():
+    rng = np.random.default_rng(0)
+    df1 = pd.DataFrame({"x": rng.normal(size=60), "y": rng.normal(size=60)})
+    at = make_app(_csv(df1), auto_update_corr=True)
+    at.run()
+    assert len(at.exception) == 0
+    fp1 = at.session_state["corr_fingerprint"]
+
+    df2 = pd.DataFrame({"x": rng.normal(size=60), "y": rng.normal(size=60)})
+    at.session_state["file_bytes"] = _csv(df2)
+    at.run()
+    assert len(at.exception) == 0
+    assert at.session_state["corr_fingerprint"] != fp1
 
 
 def test_stale_corr_cache_does_not_crash():
