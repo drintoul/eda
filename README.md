@@ -77,18 +77,17 @@ Or remove the `networks:` blocks if you don't need it.
 
 ### Optional: Cloudflare Tunnel
 
-A `cloudflared` service is included but disabled by default (compose profile
-`tunnel`). To expose the app on the internet:
+A `cloudflared` service is included in the compose stack. To expose the app on
+the internet:
 
 1. Create a managed tunnel in the Cloudflare Zero Trust dashboard and copy its
    token into `CLOUDFLARE_TUNNEL_TOKEN` in `.env`.
 2. In the tunnel's public hostname settings, point it at
    `http://eda-app:8501` (both containers share `website-network`).
-3. Start it:
+3. `docker compose up -d` starts it alongside the app.
 
-   ```bash
-   docker compose --profile tunnel up -d
-   ```
+With no token set, `cloudflared` exits after a few retries and stays stopped —
+it won't crash-loop; `docker compose ps` will show it as `Exited`.
 
 ## Configuration
 

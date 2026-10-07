@@ -34,15 +34,14 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Optional Cloudflare Tunnel — expose the app on the internet.
-  # Disabled by default; start it with: docker compose --profile tunnel up -d
+  # Optional Cloudflare Tunnel — exposes the app on the internet.
   # Requires CLOUDFLARE_TUNNEL_TOKEN in .env (Cloudflare Zero Trust dashboard).
   # Point the tunnel's public hostname at http://eda-app:8501 in the dashboard.
+  # With no token set, cloudflared exits after a few retries and stays stopped;
+  # set the token and run `docker compose up -d` to bring the tunnel up.
   cloudflared:
     image: cloudflare/cloudflared:2026.9.3
     container_name: eda-cloudflared
-    profiles:
-      - tunnel
 
     command: tunnel --no-autoupdate run
     environment:
@@ -55,7 +54,9 @@ services:
       eda-app:
         condition: service_healthy
 
-    restart: unless-stopped
+    # Bounded retries: without a token the container exits and stays stopped
+    # instead of crash-looping; real failures still get retried.
+    restart: on-failure:5
 
     security_opt:
       - no-new-privileges:true
